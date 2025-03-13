@@ -2,7 +2,7 @@
 .venv
 casia-webface.txt
 dataset_20k.pt
-faces-data
+# faces-data
 *.zip
 *.pth
 best_model.pth
