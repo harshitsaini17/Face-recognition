@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition Attendance System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.4.1/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --primary-hover: #3a56d4;
+            --success-color: #2ecc71;
+            --danger-color: #e74c3c;
+            --warning-color: #f39c12;
+            --text-color: #333;
+            --secondary-text: #666;
+            --bg-color: #f8f9fa;
+            --card-bg: #fff;
+            --border-color: #ddd;
+            --header-bg: #f0f4f8;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s ease;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: var(--transition);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background-color: var(--header-bg);
+            padding: 15px 0;
+            box-shadow: var(--shadow);
+            margin-bottom: 25px;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .title-container h1 {
+            margin: 0;
+            font-size: 24px;
+            color: var(--primary-color);
+        }
+
+        .subtitle {
+            color: var(--secondary-text);
+            font-size: 14px;
+            margin: 5px 0 0 0;
+        }
+
+        .theme-toggle {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: var(--text-color);
+            padding: 5px;
+            border-radius: 50%;
+            transition: var(--transition);
+        }
+
+        .theme-toggle:hover {
+            background-color: rgba(0, 0, 0, 0.05);
+        }
+
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            transition: var(--transition);
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--header-bg);
+        }
+
+        .card-header h2 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+
+        video, #processed-image {
+            width: 100%;
+            border-radius: 8px;
+            background-color: #2d3a4a;
+            display: block;
+            min-height: 300px;
+            object-fit: cover;
+        }
+
+        canvas {
+            display: none;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: var(--transition);
+            min-width: 120px;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-success {
+            background-color: var(--success-color);
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background-color: #27ae60;
+        }
+
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background-color: #c0392b;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 10px;
+            border-radius: 50px;
+            font-size: 14px;
+            margin-top: 10px;
+            background-color: rgba(0, 0, 0, 0.05);
+        }
+
+        .status-indicator i {
+            margin-right: 6px;
+        }
+
+        .status-connected {
+            color: var(--success-color);
+        }
+
+        .status-disconnected {
+            color: var(--danger-color);
+        }
+
+        .status-streaming {
+            color: var(--warning-color);
+        }
+
+        .attendance-container {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+            margin-top: 30px;
+            overflow: hidden;
+        }
+
+        .attendance-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--header-bg);
+        }
+
+        .attendance-header h2 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .attendance-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .attendance-body {
+            padding: 20px;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 15px;
+        }
+
+        th, td {
+            border: 1px solid var(--border-color);
+            padding: 12px 15px;
+            text-align: left;
+        }
+
+        th {
+            background-color: var(--header-bg);
+            font-weight: 500;
+            position: sticky;
+            top: 0;
+        }
+
+        tr:nth-child(even) {
+            background-color: rgba(0, 0, 0, 0.02);
+        }
+
+        tr:hover {
+            background-color: rgba(0, 0, 0, 0.05);
+        }
+
+        .present {
+            color: var(--success-color);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .absent {
+            color: var(--danger-color);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 10px;
+            background-color: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            max-width: 300px;
+        }
+
+        .notification.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .notification i {
+            font-size: 20px;
+        }
+
+        .notification-content {
+            flex: 1;
+        }
+
+        .notification .close-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 0;
+            opacity: 0.7;
+        }
+
+        .notification .close-btn:hover {
+            opacity: 1;
+        }
+
+        .search-bar {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 15px;
+            transition: var(--transition);
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.2);
+        }
+
+        .attendance-stats {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            padding: 15px;
+            flex: 1;
+            min-width: 150px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 500;
+            margin: 10px 0;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: var(--secondary-text);
+            text-align: center;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            width: 40px;
+            height: 40px;
+            margin: 20px auto;
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top-color: var(--primary-color);
+            animation: spin 1s ease-in-out infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .table-loading .spinner {
+            display: block;
+        }
+
+        .reconnect-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            visibility: hidden;
+            opacity: 0;
+            transition: var(--transition);
+        }
+
+        .reconnect-overlay.active {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .reconnect-card {
+            background-color: var(--card-bg);
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            max-width: 400px;
+            width: 80%;
+        }
+
+        .reconnect-card h3 {
+            margin-top: 0;
+            color: var(--danger-color);
+        }
+
+        /* Dark theme */
+        .dark-theme {
+            --text-color: #f0f0f0;
+            --secondary-text: #aaa;
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --border-color: #333;
+            --header-bg: #262626;
+        }
+
+        /* Responsive design */
+        @media (max-width: 992px) {
+            .video-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .theme-toggle {
+                margin-top: 10px;
+            }
+            
+            .controls {
+                justify-content: center;
+            }
+            
+            .attendance-header {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .attendance-controls {
+                width: 100%;
+                justify-content: center;
+            }
+
+            th, td {
+                padding: 8px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .btn {
+                width: 100%;
+            }
+
+            .controls {
+                flex-direction: column;
+            }
+
+            .card-header h2 {
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div class="title-container">
+                <h1>Face Recognition Attendance System</h1>
+                <p class="subtitle">Powered by FaceNet and Computer Vision</p>
+            </div>
+            <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
+                <i class="fas fa-moon"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="video-grid">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Webcam Input</h2>
+                    <div class="status-indicator" id="webcam-status">
+                        <i class="fas fa-video-slash"></i> Webcam off
+                    </div>
+                </div>
+                <div class="card-body">
+                    <video id="video" autoplay playsinline></video>
+                    <canvas id="canvas"></canvas>
+                    <div class="controls">
+                        <button id="start-btn" class="btn btn-primary">
+                            <i class="fas fa-play"></i> Start Webcam
+                        </button>
+                        <button id="stop-btn" class="btn btn-danger" disabled>
+                            <i class="fas fa-stop"></i> Stop Webcam
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h2>Recognition Results</h2>
+                    <div class="status-indicator" id="server-status">
+                        <i class="fas fa-plug"></i> Disconnected
+                    </div>
+                </div>
+                <div class="card-body">
+                    <img id="processed-image" src="" alt="Processed image will appear here">
+                    <div class="controls">
+                        <button id="connect-btn" class="btn btn-primary">
+                            <i class="fas fa-wifi"></i> Connect
+                        </button>
+                        <button id="disconnect-btn" class="btn btn-danger" disabled>
+                            <i class="fas fa-power-off"></i> Disconnect
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="attendance-container">
+            <div class="attendance-header">
+                <h2>Attendance Records</h2>
+                <div class="attendance-controls">
+                    <button id="refresh-attendance" class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i> Refresh Data
+                    </button>
+                    <button id="export-csv" class="btn btn-success">
+                        <i class="fas fa-file-export"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+            <div class="attendance-body">
+                <div class="attendance-stats">
+                    <div class="stat-card">
+                        <i class="fas fa-users"></i>
+                        <div class="stat-value" id="total-count">0</div>
+                        <div class="stat-label">Total Registered</div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-user-check"></i>
+                        <div class="stat-value" id="present-count">0</div>
+                        <div class="stat-label">Currently Present</div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-hourglass-half"></i>
+                        <div class="stat-value" id="avg-time">00:00:00</div>
+                        <div class="stat-label">Average Attendance</div>
+                    </div>
+                </div>
+                
+                <div class="search-bar">
+                    <input type="text" id="search-input" class="search-input" placeholder="Search by name...">
+                </div>
+                
+                <div class="spinner"></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Time Present</th>
+                            <th>Last Seen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="attendance-data">
+                        <!-- Attendance data will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification">
+        <i class="fas fa-info-circle"></i>
+        <div class="notification-content">
+            <div id="notification-message"></div>
+        </div>
+        <button class="close-btn" id="close-notification">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+
+    <div class="reconnect-overlay" id="reconnect-overlay">
+        <div class="reconnect-card">
+            <h3>Connection Lost</h3>
+            <p>The connection to the server has been lost. Would you like to try reconnecting?</p>
+            <button id="retry-connection" class="btn btn-primary">
+                <i class="fas fa-sync"></i> Reconnect
+            </button>
+        </div>
+    </div>
+    
+    <script>
+        // DOM Elements
+        const videoElement = document.getElementById('video');
+        const canvasElement = document.getElementById('canvas');
+        const canvasContext = canvasElement.getContext('2d');
+        const processedImage = document.getElementById('processed-image');
+        const attendanceTable = document.getElementById('attendance-data');
+        
+        const startButton = document.getElementById('start-btn');
+        const stopButton = document.getElementById('stop-btn');
+        const connectButton = document.getElementById('connect-btn');
+        const disconnectButton = document.getElementById('disconnect-btn');
+        const refreshAttendanceButton = document.getElementById('refresh-attendance');
+        const exportCsvButton = document.getElementById('export-csv');
+        const searchInput = document.getElementById('search-input');
+        
+        const webcamStatus = document.getElementById('webcam-status');
+        const serverStatus = document.getElementById('server-status');
+        
+        const totalCountElement = document.getElementById('total-count');
+        const presentCountElement = document.getElementById('present-count');
+        const avgTimeElement = document.getElementById('avg-time');
+        
+        const themeToggle = document.getElementById('theme-toggle');
+        const notification = document.getElementById('notification');
+        const notificationMessage = document.getElementById('notification-message');
+        const closeNotification = document.getElementById('close-notification');
+        
+        const reconnectOverlay = document.getElementById('reconnect-overlay');
+        const retryConnection = document.getElementById('retry-connection');
+        
+        // Variables
+        let socket;
+        let isStreaming = false;
+        let streamInterval;
+        let connectionRetries = 0;
+        let attendanceData = {};
+        const FPS = 5; // Frames per second to send to server
+        const SERVER_URL = 'http://localhost:5000';
+        
+        // Initialize UI state
+        function initializeApp() {
+            // Check local storage for dark mode preference
+            if (localStorage.getItem('darkMode') === 'true') {
+                document.body.classList.add('dark-theme');
+                themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+            }
+            
+            // Add event listeners
+            startButton.addEventListener('click', startWebcam);
+            stopButton.addEventListener('click', stopWebcam);
+            connectButton.addEventListener('click', connectToServer);
+            disconnectButton.addEventListener('click', disconnectFromServer);
+            refreshAttendanceButton.addEventListener('click', fetchAttendanceData);
+            exportCsvButton.addEventListener('click', exportAttendanceToCsv);
+            
+            themeToggle.addEventListener('click', toggleTheme);
+            closeNotification.addEventListener('click', hideNotification);
+            retryConnection.addEventListener('click', reconnectToServer);
+            
+            searchInput.addEventListener('input', filterAttendanceTable);
+            
+            // Initial fetch of attendance data
+            fetchAttendanceData();
+        }
+        
+        // Function to initialize webcam
+        async function startWebcam() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }
+                });
+                
+                videoElement.srcObject = stream;
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                
+                webcamStatus.innerHTML = '<i class="fas fa-video status-connected"></i> Webcam active';
+                showNotification('Webcam started successfully!', 'success');
+                
+                // Set canvas size to match video dimensions
+                videoElement.addEventListener('loadedmetadata', () => {
+                    canvasElement.width = videoElement.videoWidth;
+                    canvasElement.height = videoElement.videoHeight;
+                });
+                
+                // Start streaming if already connected
+                if (socket && socket.connected) {
+                    startStreaming();
+                }
+            } catch (error) {
+                console.error('Error accessing webcam:', error);
+                showNotification('Failed to access webcam. Please make sure you have a camera connected and have granted permission to use it.', 'error');
+            }
+        }
+        
+        // Function to stop webcam
+        function stopWebcam() {
+            if (videoElement.srcObject) {
+                const tracks = videoElement.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                videoElement.srcObject = null;
+                
+                startButton.disabled = false;
+                stopButton.disabled = true;
+                
+                webcamStatus.innerHTML = '<i class="fas fa-video-slash"></i> Webcam off';
+                showNotification('Webcam stopped', 'info');
+                
+                stopStreaming();
+            }
+        }
+        
+        // Function to connect to WebSocket server
+        function connectToServer() {
+            showNotification('Connecting to server...', 'info');
+            serverStatus.innerHTML = '<i class="fas fa-plug"></i> Connecting...';
+            
+            try {
+                // Create socket connection
+                socket = io(SERVER_URL);
+                
+                // Handle connection events
+                socket.on('connect', () => {
+                    console.log('Connected to server');
+                    connectionRetries = 0;
+                    
+                    connectButton.disabled = true;
+                    disconnectButton.disabled = false;
+                    serverStatus.innerHTML = '<i class="fas fa-wifi status-connected"></i> Connected';
+                    
+                    showNotification('Connected to server', 'success');
+                    
+                    // Start streaming if webcam is active
+                    if (videoElement.srcObject) {
+                        startStreaming();
+                    }
+                });
+                
+                socket.on('disconnect', () => {
+                    console.log('Disconnected from server');
+                    
+                    connectButton.disabled = false;
+                    disconnectButton.disabled = true;
+                    serverStatus.innerHTML = '<i class="fas fa-plug status-disconnected"></i> Disconnected';
+                    
+                    stopStreaming();
+                    showNotification('Disconnected from server', 'warning');
+                    
+                    // Show reconnect overlay if not manually disconnected
+                    if (connectionRetries < 3) {
+                        reconnectOverlay.classList.add('active');
+                    }
+                });
+                
+                socket.on('connect_error', (error) => {
+                    console.error('Connection error:', error);
+                    
+                    connectButton.disabled = false;
+                    disconnectButton.disabled = true;
+                    serverStatus.innerHTML = '<i class="fas fa-exclamation-triangle status-disconnected"></i> Connection Error';
+                    
+                    showNotification('Failed to connect to server', 'error');
+                });
+                
+                // Handle processed image from server
+                socket.on('processed_image', data => {
+                    processedImage.src = data.image;
+                    
+                    // Fetch updated attendance data 
+                    fetchAttendanceData();
+                });
+            } catch (error) {
+                console.error('Socket initialization error:', error);
+                showNotification('Failed to initialize socket connection', 'error');
+            }
+        }
+        
+        // Function to retry connection
+        function reconnectToServer() {
+            connectionRetries++;
+            reconnectOverlay.classList.remove('active');
+            connectToServer();
+        }
+        
+        // Function to disconnect from server
+        function disconnectFromServer() {
+            if (socket) {
+                stopStreaming();
+                socket.disconnect();
+                socket = null;
+                
+                connectButton.disabled = false;
+                disconnectButton.disabled = true;
+                serverStatus.innerHTML = '<i class="fas fa-plug status-disconnected"></i> Disconnected';
+                
+                showNotification('Disconnected from server', 'info');
+            }
+        }
+        
+        // Function to start streaming frames to server
+        function startStreaming() {
+            if (!socket || !videoElement.srcObject) return;
+            
+            isStreaming = true;
+            serverStatus.innerHTML = '<i class="fas fa-broadcast-tower status-streaming"></i> Streaming';
+            
+            // Send frames at specified FPS
+            streamInterval = setInterval(() => {
+                if (!isStreaming) return;
+                
+                // Draw video frame to canvas
+                canvasContext.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+                
+                // Get image data as base64
+                const imageData = canvasElement.toDataURL('image/jpeg', 0.7);
+                
+                // Send to server via WebSocket
+                socket.emit('image', imageData);
+                
+            }, 1000 / FPS);
+            
+            showNotification('Streaming started at ' + FPS + ' FPS', 'success');
+        }
+        
+        // Function to stop streaming frames
+        function stopStreaming() {
+            isStreaming = false;
+            if (streamInterval) {
+                clearInterval(streamInterval);
+                streamInterval = null;
+                
+                if (socket && socket.connected) {
+                    serverStatus.innerHTML = '<i class="fas fa-wifi status-connected"></i> Connected (not streaming)';
+                }
+            }
+        }
+        
+        // Function to fetch attendance data from separate endpoint
+        async function fetchAttendanceData() {
+            try {
+                document.querySelector('.attendance-body').classList.add('table-loading');
+                const response = await fetch(`${SERVER_URL}/api/attendance`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                
+                attendanceData = await response.json();
+                updateAttendanceTable(attendanceData);
+                updateAttendanceStats(attendanceData);
+                
+            } catch (error) {
+                console.error('Error fetching attendance data:', error);
+                showNotification('Failed to fetch attendance data', 'error');
+            } finally {
+                document.querySelector('.attendance-body').classList.remove('table-loading');
+            }
+        }
+        
+        // Function to update attendance table
+        function updateAttendanceTable(data) {
+            // Clear existing rows
+            attendanceTable.innerHTML = '';
+            
+            // If no data
+            if (Object.keys(data).length === 0) {
+                attendanceTable.innerHTML = '<tr><td colspan="4" style="text-align: center;">No attendance data available</td></tr>';
+                return;
+            }
+            
+            // Filter by search term if any
+            const searchTerm = searchInput.value.toLowerCase();
+            
+            // Sort entries: present first, then by name
+            const sortedEntries = Object.entries(data).sort((a, b) => {
+                if (a[1].is_present !== b[1].is_present) {
+                    return b[1].is_present - a[1].is_present; // Present people first
+                }
+                return a[0].localeCompare(b[0]); // Then alphabetically
+            });
+            
+            // Add rows for each person
+            sortedEntries.forEach(([name, details]) => {
+                // Apply search filter
+                if (searchTerm && !name.toLowerCase().includes(searchTerm)) {
+                    return;
+                }
+                
+                const row = document.createElement('tr');
+                
+                const nameCell = document.createElement('td');
+                nameCell.textContent = name;
+                
+                const statusCell = document.createElement('td');
+                if (details.is_present) {
+                    statusCell.innerHTML = '<span class="present"><i class="fas fa-check-circle"></i> Present</span>';
+                } else {
+                    statusCell.innerHTML = '<span class="absent"><i class="fas fa-times-circle"></i> Absent</span>';
+                }
+                
+                const timeCell = document.createElement('td');
+                timeCell.textContent = details.time_present;
+                
+                const lastSeenCell = document.createElement('td');
+                lastSeenCell.textContent = details.last_seen || 'N/A';
+                
+                row.appendChild(nameCell);
+                row.appendChild(statusCell);
+                row.appendChild(timeCell);
+                row.appendChild(lastSeenCell);
+                
+                attendanceTable.appendChild(row);
+            });
+        }
+        
+        // Function to update attendance statistics
+        function updateAttendanceStats(data) {
+            const entries = Object.entries(data);
+            
+            // Total registered
+            totalCountElement.textContent = entries.length;
+            
+            // Currently present
+            const presentCount = entries.filter(([_, details]) => details.is_present).length;
+            presentCountElement.textContent = presentCount;
+            
+            // Average attendance time calculation
+            if (entries.length > 0) {
+                let totalSeconds = 0;
+                
+                entries.forEach(([_, details]) => {
+                    const [hours, minutes, seconds] = details.time_present.split(':').map(Number);
+                    totalSeconds += hours * 3600 + minutes * 60 + seconds;
+                });
+                
+                const averageSeconds = Math.floor(totalSeconds / entries.length);
+                avgTimeElement.textContent = formatTimeFromSeconds(averageSeconds);
+            } else {
+                avgTimeElement.textContent = '00:00:00';
+            }
+        }
+        
+        // Helper function to format time from seconds
+        function formatTimeFromSeconds(totalSeconds) {
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+        
+        // Function to filter attendance table based on search input
+        function filterAttendanceTable() {
+            updateAttendanceTable(attendanceData);
+        }
+        
+        // Function to export attendance data to CSV
+        function exportAttendanceToCsv() {
+            if (Object.keys(attendanceData).length === 0) {
+                showNotification('No attendance data to export', 'warning');
+                return;
+            }
+            
+            // Create CSV content
+            let csvContent = 'Name,Status,Time Present,Last Seen\n';
+            
+            Object.entries(attendanceData).forEach(([name, details]) => {
+                const status = details.is_present ? 'Present' : 'Absent';
+                const row = [
+                    `"${name}"`,
+                    status,
+                    details.time_present,
+                    details.last_seen || 'N/A'
+                ].join(',');
+                
+                csvContent += row + '\n';
+            });
+            
+            // Create and download the file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            
+            // Get current date and time for filename
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0];
+            const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', `attendance_${dateStr}_${timeStr}.csv`);
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showNotification('Attendance data exported to CSV', 'success');
+        }
+        
+        // Toggle dark/light theme
+        function toggleTheme() {
+            const isDarkMode = document.body.classList.toggle('dark-theme');
+            
+            if (isDarkMode) {
+                themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+                localStorage.setItem('darkMode', 'true');
+            } else {
+                themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+                localStorage.setItem('darkMode', 'false');
+            }
+        }
+        
+        // Show notification
+        function showNotification(message, type = 'info') {
+            // Set icon based on type
+            let icon = 'info-circle';
+            switch (type) {
+                case 'success':
+                    icon = 'check-circle';
+                    notification.style.backgroundColor = 'var(--success-color)';
+                    break;
+                case 'error':
+                    icon = 'exclamation-circle';
+                    notification.style.backgroundColor = 'var(--danger-color)';
+                    break;
+                case 'warning':
+                    icon = 'exclamation-triangle';
+                    notification.style.backgroundColor = 'var(--warning-color)';
+                    break;
+                default:
+                    notification.style.backgroundColor = 'var(--primary-color)';
+            }
+            
+            notification.querySelector('i').className = `fas fa-${icon}`;
+            notificationMessage.textContent = message;
+            
+            notification.classList.add('show');
+            
+            // Auto-hide after 5 seconds
+            setTimeout(hideNotification, 5000);
+        }
+        
+        // Hide notification
+        function hideNotification() {
+            notification.classList.remove('show');
+        }
+        
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', initializeApp);
+    </script>
+</body>
+</html>
