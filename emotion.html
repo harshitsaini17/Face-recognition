@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Engagement Analytics</title>
+    
+    <!-- Include Socket.IO and Plotly -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-gap: 20px;
+        }
+        
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        
+        .full-width {
+            grid-column: 1 / span 2;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .header h1 {
+            margin: 0;
+            color: #333;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-gap: 10px;
+        }
+        
+        .stat-card {
+            background-color: #f9f9f9;
+            border-radius: 6px;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+            color: #2c3e50;
+        }
+        
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        
+        .video-feed {
+            width: 100%;
+            border-radius: 8px;
+            max-height: 400px;
+            object-fit: cover;
+        }
+        
+        .hidden-video {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            opacity: 0;
+        }
+        
+        h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .connection-status {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .connected {
+            background-color: #2ecc71;
+            color: white;
+        }
+        
+        .disconnected {
+            background-color: #e74c3c;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Student Engagement Analytics</h1>
+        <div class="connection-status disconnected" id="connectionStatus">Disconnected</div>
+    </div>
+    
+    <div class="dashboard">
+        <div class="card">
+            <h2>Live Video Feed</h2>
+            <!-- Hidden video element for webcam capture -->
+            <video id="webcamVideo" class="hidden-video" autoplay playsinline></video>
+            <!-- Canvas for capturing frames -->
+            <canvas id="webcamCanvas" class="hidden-video"></canvas>
+            <!-- Displayed processed video feed -->
+            <img id="videoFeed" class="video-feed" alt="Classroom video feed">
+        </div>
+        
+        <div class="card">
+            <h2>Current Class Statistics</h2>
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-label">Students Present</div>
+                    <div class="stat-value" id="studentCount">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Engagement Score</div>
+                    <div class="stat-value" id="engagementScore">0.0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Active Students</div>
+                    <div class="stat-value" id="activeStudents">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Disengaged Students</div>
+                    <div class="stat-value" id="disengagedStudents">0</div>
+                </div>
+            </div>
+            <div style="height: 300px; margin-top: 20px;">
+                <canvas id="emotionChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="card full-width">
+            <h2>Engagement Over Time</h2>
+            <div id="timeSeriesPlot" style="width: 100%; height: 400px;"></div>
+        </div>
+        
+        <div class="card full-width">
+            <h2>Student Engagement Breakdown</h2>
+            <div id="studentBreakdown" style="width: 100%; height: 400px;"></div>
+        </div>
+    </div>
+    
+    <script>
+        // Connect to the Socket.IO server
+        const socket = io.connect('http://localhost:5000');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const videoFeed = document.getElementById('videoFeed');
+        const webcamVideo = document.getElementById('webcamVideo');
+        const webcamCanvas = document.getElementById('webcamCanvas');
+        const ctx = webcamCanvas.getContext('2d');
+        
+        // Time series data storage
+        let timeData = [];
+        let engagementData = [];
+        const studentData = {};
+        let webcamStream = null;
+        let isProcessing = false;
+        let frameInterval = null;
+        
+        // Function to start webcam capture
+        async function startWebcam() {
+            try {
+                webcamStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480 },
+                    audio: false
+                });
+                webcamVideo.srcObject = webcamStream;
+                
+                // Set canvas size to match video
+                webcamCanvas.width = 640;
+                webcamCanvas.height = 480;
+                
+                // Start sending frames
+                frameInterval = setInterval(captureAndSendFrame, 100); // 10 frames per second
+            } catch (error) {
+                console.error('Error accessing webcam:', error);
+                connectionStatus.innerText = 'Webcam Error';
+            }
+        }
+        
+        // Function to capture and send frames
+        function captureAndSendFrame() {
+            if (!webcamStream || isProcessing) return;
+            
+            try {
+                // Draw current video frame to canvas
+                ctx.drawImage(webcamVideo, 0, 0, webcamCanvas.width, webcamCanvas.height);
+                
+                // Get image data as base64
+                const imageData = webcamCanvas.toDataURL('image/jpeg', 0.8);
+                
+                // Send to server
+                isProcessing = true;
+                socket.emit('webcam_frame', { image: imageData });
+            } catch (error) {
+                console.error('Error capturing frame:', error);
+            }
+        }
+        
+        // Connection status management
+        socket.on('connect', function() {
+            connectionStatus.innerText = 'Connected';
+            connectionStatus.classList.remove('disconnected');
+            connectionStatus.classList.add('connected');
+            startWebcam();
+        });
+        
+        socket.on('disconnect', function() {
+            connectionStatus.innerText = 'Disconnected';
+            connectionStatus.classList.remove('connected');
+            connectionStatus.classList.add('disconnected');
+            
+            // Stop sending frames when disconnected
+            if (frameInterval) {
+                clearInterval(frameInterval);
+                frameInterval = null;
+            }
+            
+            // Stop webcam
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                webcamStream = null;
+            }
+        });
+        
+        // Handle processed video frames
+        socket.on('video_frame', function(data) {
+            videoFeed.src = 'data:image/jpeg;base64,' + data.image;
+            isProcessing = false; // Ready to process next frame
+        });
+        
+        // Initialize emotion chart
+        const emotionCtx = document.getElementById('emotionChart').getContext('2d');
+        const emotionChart = new Chart(emotionCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Happy', 'Sad', 'Angry', 'Neutral', 'Surprise', 'Fear', 'Disgust'],
+                datasets: [{
+                    data: [0, 0, 0, 0, 0, 0, 0],
+                    backgroundColor: [
+                        '#2ecc71', '#3498db', '#e74c3c', '#95a5a6', 
+                        '#f1c40f', '#9b59b6', '#1abc9c'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right'
+                    },
+                    title: {
+                        display: true,
+                        text: 'Emotion Distribution'
+                    }
+                }
+            }
+        });
+        
+        // Initialize time series plot
+        Plotly.newPlot('timeSeriesPlot', [{
+            x: [],
+            y: [],
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'Average Engagement',
+            line: {
+                color: '#2980b9',
+                width: 3
+            },
+            marker: {
+                size: 8,
+                color: '#3498db'
+            }
+        }], {
+            margin: { t: 10, b: 30, l: 40, r: 10 },
+            xaxis: {
+                title: 'Time'
+            },
+            yaxis: {
+                title: 'Engagement Score',
+                range: [0, 1]
+            }
+        });
+        
+        // Initialize student breakdown chart
+        Plotly.newPlot('studentBreakdown', [], {
+            margin: { t: 10, b: 50, l: 50, r: 10 },
+            barmode: 'group',
+            xaxis: {
+                title: 'Student'
+            },
+            yaxis: {
+                title: 'Engagement Score',
+                range: [0, 1]
+            }
+        });
+        
+        // Handle engagement data updates
+        socket.on('engagement_data', function(data) {
+            if (!data.students || data.students.length === 0) return;
+            
+            // Update timestamp
+            const timestamp = new Date(data.timestamp);
+            const timeString = timestamp.toLocaleTimeString();
+            
+            // Calculate average engagement
+            let totalEngagement = 0;
+            let activeCount = 0;
+            let disengagedCount = 0;
+            
+            // Reset emotion counts
+            const emotionCounts = {
+                'happy': 0, 'sad': 0, 'angry': 0, 'neutral': 0, 
+                'surprise': 0, 'fear': 0, 'disgust': 0
+            };
+            
+            // Process student data
+            data.students.forEach(student => {
+                totalEngagement += student.engagement;
+                
+                if (student.engagement > 0.6) {
+                    activeCount++;
+                } else if (student.engagement < 0.3) {
+                    disengagedCount++;
+                }
+                
+                // Count emotions
+                if (emotionCounts.hasOwnProperty(student.emotion)) {
+                    emotionCounts[student.emotion]++;
+                }
+                
+                // Store individual student data
+                if (!studentData[student.id]) {
+                    studentData[student.id] = {
+                        engagements: [],
+                        timestamps: []
+                    };
+                }
+                
+                studentData[student.id].engagements.push(student.engagement);
+                studentData[student.id].timestamps.push(timeString);
+                
+                // Keep only the last 20 data points
+                if (studentData[student.id].engagements.length > 20) {
+                    studentData[student.id].engagements.shift();
+                    studentData[student.id].timestamps.shift();
+                }
+            });
+            
+            const avgEngagement = totalEngagement / data.students.length;
+            
+            // Update stats display
+            document.getElementById('studentCount').innerText = data.students.length;
+            document.getElementById('engagementScore').innerText = avgEngagement.toFixed(2);
+            document.getElementById('activeStudents').innerText = activeCount;
+            document.getElementById('disengagedStudents').innerText = disengagedCount;
+            
+            // Update emotion chart
+            emotionChart.data.datasets[0].data = [
+                emotionCounts.happy, emotionCounts.sad, emotionCounts.angry, 
+                emotionCounts.neutral, emotionCounts.surprise, emotionCounts.fear, 
+                emotionCounts.disgust
+            ];
+            emotionChart.update();
+            
+            // Update time series data
+            timeData.push(timeString);
+            engagementData.push(avgEngagement);
+            
+            // Keep only last 30 points for time series
+            if (timeData.length > 30) {
+                timeData.shift();
+                engagementData.shift();
+            }
+            
+            // Update time series plot
+            Plotly.update('timeSeriesPlot', {
+                x: [timeData],
+                y: [engagementData]
+            }, {}, [0]);
+            
+            // Update student breakdown chart
+            const studentIds = Object.keys(studentData);
+            const studentTraces = studentIds.map(id => {
+                return {
+                    x: studentData[id].timestamps.slice(-5), // Show last 5 points
+                    y: studentData[id].engagements.slice(-5),
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Student ' + id.split('_')[1]
+                };
+            });
+            
+            Plotly.react('studentBreakdown', studentTraces);
+        });
+    </script>
+</body>
+</html>

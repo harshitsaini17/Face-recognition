@@ -670,7 +670,7 @@
         let streamInterval;
         let connectionRetries = 0;
         let attendanceData = {};
-        const FPS = 5; // Frames per second to send to server
+        const FPS = 2; // Frames per second to send to server
         const SERVER_URL = 'http://localhost:5000';
         
         // Initialize UI state
@@ -879,12 +879,12 @@
             try {
                 document.querySelector('.attendance-body').classList.add('table-loading');
                 const response = await fetch(`${SERVER_URL}/api/attendance`);
-                
                 if (!response.ok) {
                     throw new Error(`HTTP error! Status: ${response.status}`);
                 }
                 
                 attendanceData = await response.json();
+                console.log(attendanceData)
                 updateAttendanceTable(attendanceData);
                 updateAttendanceStats(attendanceData);
                 

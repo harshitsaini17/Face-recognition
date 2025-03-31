@@ -1,0 +1,17 @@
+{
+    "name": "string",
+    "image": "string",
+    "encoding": "string",
+    "attendance": [
+        {
+            "classId": "string",
+            "date"  : "string",
+            "class-start-time": "string",
+            "class-end-time": "string",
+            "student-enter-time": "string",
+            "student-leave-time": "string",
+            "total-time": "string",
+            "present": "string"
+        }
+    ]
+}
