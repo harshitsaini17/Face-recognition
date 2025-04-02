@@ -20,8 +20,9 @@ from bson import json_util
 app = Flask(__name__)
 CORS(app)
 
+
 # MongoDB Configuration
-app.config["MONGO_URI"] = "mongodb://localhost:27017/attendance_db"
+app.config["MONGO_URI"] = "mongodb+srv://ed:jjI1dYtf5z3H0WmA@cluster0.iudqb9e.mongodb.net/attendance_db"
 mongo = PyMongo(app)
 
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -160,12 +161,14 @@ def update_attendance(name):
         
         if not record['is_present']:
             # Person just arrived
-            record['first_seen'] = time.time() if record['first_seen'] is None else record['first_seen']
+            record['first_seen'] = time.time()
             record['last_seen'] = time.time()
             record['is_present'] = True
+            record['total_time'] = 0  # Reset total time when first arriving
         else:
             # Person still present
             record['last_seen'] = time.time()
+            # Don't update total_time here, it will be calculated in update_total_times
     else:
         # New person
         attendance_data[name] = {
@@ -183,20 +186,30 @@ def update_attendance(name):
             break
     
     if today_attendance:
-        # Update existing attendance record
-        if today_attendance.get("student-leave-time"):
-            # Student returned after leaving
+        # Check if student is returning after leaving
+        if not attendance_data[name]['is_present'] and today_attendance.get("student-leave-time") != current_time_str:
+            # Update enter time for a returning student
             mongo.db.students.update_one(
                 {"name": name, "attendance.date": current_date, "attendance.classId": "default"},
                 {"$set": {"attendance.$.student-enter-time": current_time_str}}
             )
-        # Update leave time every time student is seen
+        
+        # Always update leave time when student is seen
         mongo.db.students.update_one(
             {"name": name, "attendance.date": current_date, "attendance.classId": "default"},
             {"$set": {"attendance.$.student-leave-time": current_time_str}}
         )
+        
+        # Calculate and update total time
+        enter_time = today_attendance.get("student-enter-time")
+        total_time = calculate_total_time(enter_time, current_time_str)
+        
+        mongo.db.students.update_one(
+            {"name": name, "attendance.date": current_date, "attendance.classId": "default"},
+            {"$set": {"attendance.$.total-time": total_time}}
+        )
     else:
-        # Create new attendance record
+        # Create new attendance record with correct initial values
         new_attendance = {
             "classId": "default",
             "date": current_date,
@@ -204,7 +217,7 @@ def update_attendance(name):
             "class-end-time": "17:00:00",
             "student-enter-time": current_time_str,
             "student-leave-time": current_time_str,
-            "total-time": "00:00:00",
+            "total-time": "00:00:00",  # Initially zero
             "present": "true"
         }
         
@@ -235,6 +248,10 @@ def calculate_total_time(enter_time, leave_time):
     enter = datetime.strptime(enter_time, format_str)
     leave = datetime.strptime(leave_time, format_str)
     
+    # If enter and leave times are the same, return zero time
+    if enter == leave:
+        return "00:00:00"
+    
     # Handle crossing midnight
     if leave < enter:
         leave += timedelta(days=1)
@@ -257,12 +274,31 @@ def update_total_times():
                     # Person left, update total time
                     record['total_time'] += record['last_seen'] - record['first_seen']
                     record['is_present'] = False
+                    
+                    # Update the MongoDB record with the latest total time
+                    student = mongo.db.students.find_one({"name": name})
+                    if student:
+                        for att in student.get("attendance", []):
+                            if att.get("date") == current_date and att.get("classId") == "default":
+                                enter_time = att.get("student-enter-time")
+                                leave_time = att.get("student-leave-time")
+                                
+                                if enter_time and leave_time:
+                                    total_time = calculate_total_time(enter_time, leave_time)
+                                    
+                                    # Update total time in MongoDB
+                                    mongo.db.students.update_one(
+                                        {"name": name, "attendance.date": current_date, "attendance.classId": "default"},
+                                        {"$set": {"attendance.$.total-time": total_time}}
+                                    )
+                                    print(f"Updated total time for {name}: {total_time}")
             
             # Get all students with today's attendance
-            students = mongo.db.students.find({"attendance.date": current_date})
+            students = list(mongo.db.students.find({"attendance.date": current_date}))
             
             for student in students:
-                for att in student.get("attendance", []):
+                name = student.get("name")
+                for att_index, att in enumerate(student.get("attendance", [])):
                     if att.get("date") == current_date and att.get("classId") == "default":
                         enter_time = att.get("student-enter-time")
                         leave_time = att.get("student-leave-time")
@@ -270,11 +306,12 @@ def update_total_times():
                         if enter_time and leave_time:
                             total_time = calculate_total_time(enter_time, leave_time)
                             
-                            # Update total time in MongoDB
+                            # Update total time in MongoDB using array index
                             mongo.db.students.update_one(
-                                {"name": student["name"], "attendance.date": current_date, "attendance.classId": "default"},
-                                {"$set": {"attendance.$.total-time": total_time}}
+                                {"name": name},
+                                {"$set": {f"attendance.{att_index}.total-time": total_time}}
                             )
+                            print(f"Updated total time for {name} via periodic update: {total_time}")
         except Exception as e:
             print(f"Error updating total times: {e}")
         
@@ -299,23 +336,46 @@ def calculate_attendance_times():
                 break
         
         if today_attendance:
-            attendance_summary[name] = {
-                'time_present': today_attendance.get("total-time", "00:00:00"),
-                'is_present': today_attendance.get("present") == "true",
-                'last_seen': today_attendance.get("student-leave-time")
-            }
+            # If the student is currently present, calculate the current total time
+            if name in attendance_data and attendance_data[name]['is_present']:
+                current_session_time = time.time() - attendance_data[name]['first_seen']
+                # Format the time for display
+                h, m, s = today_attendance.get("total-time", "00:00:00").split(":")
+                stored_seconds = int(h) * 3600 + int(m) * 60 + int(s)
+                total_seconds = stored_seconds + int(current_session_time)
+                
+                hours, remainder = divmod(total_seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                formatted_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                
+                attendance_summary[name] = {
+                    'time_present': formatted_time,
+                    'is_present': True,
+                    'last_seen': datetime.fromtimestamp(attendance_data[name]['last_seen']).strftime('%H:%M:%S')
+                }
+            else:
+                # Student is not currently present, use stored total time
+                attendance_summary[name] = {
+                    'time_present': today_attendance.get("total-time", "00:00:00"),
+                    'is_present': today_attendance.get("present") == "true",
+                    'last_seen': today_attendance.get("student-leave-time")
+                }
         else:
             # Check in-memory data for real-time tracking
             if name in attendance_data:
                 record = attendance_data[name]
                 if record['is_present']:
                     current_session_time = time.time() - record['first_seen']
-                    total_time = record['total_time'] + current_session_time
+                    total_seconds = record['total_time'] + int(current_session_time)
                 else:
-                    total_time = record['total_time']
+                    total_seconds = record['total_time']
+                
+                hours, remainder = divmod(int(total_seconds), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                formatted_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
                 
                 attendance_summary[name] = {
-                    'time_present': format_time(total_time),
+                    'time_present': formatted_time,
                     'is_present': record['is_present'],
                     'last_seen': datetime.fromtimestamp(record['last_seen']).strftime('%H:%M:%S') if record['last_seen'] else None
                 }
